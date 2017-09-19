@@ -65,8 +65,18 @@ SQL = '''SELECT * FROM schedules WHERE  aircraft_type = '9' and
 
 def filter_schedules(cur, sql):
     cur.execute(sql)
+    result = []
     for row in cur:
-        print row
+        result.append(row)
+    return result
+
+def query(cur, sql):
+    cur.execute(sql)
+    result = []
+    for row in cur:
+        result.append(row)
+    return result
+
 
 
 SCHEDULES_TABLE = 'schedules'
@@ -76,6 +86,16 @@ if __name__ == '__main__':
     cur = con.cursor()
     types = ['integer', 'integer', 'integer', 'text', 'text', 'text', 'text']
     create_table(cur, SCHEDULES_TABLE, res[0], types, res[1:])
-    filter_schedules(cur, SQL)
+    # Step 1
+    delay_flight = filter_schedules(cur, SQL)
+
+    # Step 2
+    tail_numbers_of_delay_flight = [ x[6] for x in delay_flight]
+    for tail_number in tail_numbers_of_delay_flight:
+        sql = "SELECT * FROM %s WHERE aircraft_tail_number = '%s' order by start_time limit 2" % (SCHEDULES_TABLE, tail_number)
+        print '-' * 100
+        res = query(cur, sql)
+        print res
+
     con.commit()
     con.close()
