@@ -218,6 +218,8 @@ if __name__ == '__main__':
             if t2_r_i[-1] == t3_tail_number:
                 t2_r = t2_r_i
                 break
+        # if t2_r is None:
+        #     continue
         #
         # previous = None
         # for my_r in temp:
