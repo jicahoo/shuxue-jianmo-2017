@@ -79,39 +79,46 @@ def query(cur, sql):
         result.append(list(row))
     return result
 
+
 def count_flights(cur, start_time, airport, is_to_airport=False):
     sql = ''
     if is_to_airport:
         sql = "SELECT count(*) FROM schedules WHERE end_time = %s and to_airport = '%s'" % (start_time, airport)
     else:
         sql = "SELECT count(*) FROM schedules WHERE start_time = %s and from_airport = '%s'" % (start_time, airport)
-    res =  query(cur, sql)
+    res = query(cur, sql)
     return res[0][0]
 
 def update_t2(cur, t2a, t2b):
     new_ovs_start_flights = []
+    nine_pm = 1461358800
     for idx, ovs_start in enumerate(t2a):
         new_ovs_start = [x for x in ovs_start]
         new_ovs_start_flights.append(new_ovs_start)
-        for i in range(0,300,10):
-            if count_flights(cur, 21*3600+i*60, 'ovs') + 1 <= 5:
-                new_ovs_start_flights[idx][1] = 21*3600 + i*60
+        for i in range(0, 300, 10):
+            if count_flights(cur, nine_pm + i * 60, 'ovs') + 1 <= 5:
+                new_ovs_start_flights[idx][1] = nine_pm + i * 60
                 break
 
     new_ovs_end_flights = []
     for idx, ovs_end in enumerate(t2b):
         new_ovs_end = [x for x in ovs_end]
         new_ovs_end_flights.append(new_ovs_end)
-        nine_pm = 1461358800
-        for i in range(0,300,10):
-            if count_flights(cur, nine_pm +i*60, 'ovs', True) + 1 <= 5:
+        for i in range(0, 300, 10):
+            if count_flights(cur, nine_pm + i * 60, 'ovs', True) + 1 <= 5:
                 duration = new_ovs_end_flights[idx][2] - new_ovs_end_flights[idx][1]
-                new_ovs_end_flights[idx][2] = nine_pm + i*60
-                new_ovs_end_flights[idx][1] = nine_pm + i*60 - duration
+                new_ovs_end_flights[idx][2] = nine_pm + i * 60
+                new_ovs_end_flights[idx][1] = nine_pm + i * 60 - duration
                 break
     return (new_ovs_start_flights, new_ovs_end_flights)
 
+
 SCHEDULES_TABLE = 'schedules'
+UPDATE_TIME_SQL = ''' UPDATE schedules
+          SET start_time = ? ,
+              end_time = ?
+          WHERE flight_no = ?'''
+
 if __name__ == '__main__':
     res = parse_excel()
     con = sqlite3.connect(":memory:")
@@ -134,12 +141,16 @@ if __name__ == '__main__':
             t2b.append(record)
 
 
-    def ovs_start_cmp(a,b):
+    def ovs_start_cmp(a, b):
         return a[1] - b[1]
+
+
     t2a.sort(ovs_start_cmp)
+
 
     def ovs_end_cmp(a, b):
         return a[2] - b[2]
+
 
     t2b.sort(ovs_end_cmp)
 
@@ -149,14 +160,17 @@ if __name__ == '__main__':
         tail_number = record[6]
         start_time = record[2]
         sql = "SELECT * FROM %s WHERE aircraft_tail_number = '%s' and start_time > %s order by start_time limit 1" % (
-        SCHEDULES_TABLE, tail_number, start_time)
+            SCHEDULES_TABLE, tail_number, start_time)
         # print '-' * 100
         res = query(cur, sql)
         # print res
         t3a.append(list(res[0]))
 
-    def t3_cmp(a,b):
+
+    def t3_cmp(a, b):
         return a[1] - b[1]
+
+
     t3a.sort(t3_cmp)
     for t3a_r in t3a:
         print t3a_r
@@ -166,7 +180,7 @@ if __name__ == '__main__':
         tail_number = record[6]
         start_time = record[2]
         sql = "SELECT * FROM %s WHERE aircraft_tail_number = '%s' and start_time > %s order by start_time limit 1" % (
-        SCHEDULES_TABLE, tail_number, start_time)
+            SCHEDULES_TABLE, tail_number, start_time)
         # print '-' * 100
         res = query(cur, sql)
         # print res
@@ -176,61 +190,78 @@ if __name__ == '__main__':
     for t3b_r in t3b:
         print t3b_r
 
-    t3 = t3a+t3b
+    t3 = t3a + t3b
     t3.sort(t3_cmp)
     print 't3 - ' * 100
     updated = update_t2(cur, t2a, t2b)
     t2a = updated[0]
     t2b = updated[1]
+    for r in (t2a+t2b):
+        cur.execute(UPDATE_TIME_SQL, (r[1],r[2],r[0]))
+
     i = 0
     while len(t3) != 0:
         t3_r = t3[i]
         i += 1
         from_airport = t3_r[3]
-        t4 = query(cur, "select * from schedules where from_airport = '%s' and aircraft_type ='9' order by start_time" % (from_airport))
-        t2_r = None
+        t4 = query(cur,
+                   "select * from schedules where from_airport = '%s' and aircraft_type ='9' order by start_time" % (
+                   from_airport))
         t3_tail_number = t3_r[-1]
 
-        temp = query(cur, "select * from schedules where aircraft_type ='9' and aircraft_tail_number = '%s' order by start_time" % (t3_tail_number))
-        previous = None
-        for my_r in temp:
-            if my_r[0] == t3_r[0]:
+        # temp = query(cur,
+        #              "select * from schedules where aircraft_type ='9' and aircraft_tail_number = '%s' order by start_time" % (
+        #              t3_tail_number))
+        t2_r = None
+        for t2_r_i in (t2a+t2b):
+            # print 'cmp: %s,%s' % (t2_r_i[-1], t3_tail_number)
+            if t2_r_i[-1] == t3_tail_number:
+                t2_r = t2_r_i
                 break
-            previous = my_r
-        if previous is None:
-            print t3_r
-            print '-' * 100
-            for x in temp:
-                print x
-            exit(1)
+        #
+        # previous = None
+        # for my_r in temp:
+        #     if my_r[0] == t3_r[0]:
+        #         break
+        #     previous = my_r
+        # if previous is None:
+        #     print t3_r
+        #     print '-' * 100
+        #     for x in temp:
+        #         print x
+        #     exit(1)
 
-        t2_r = previous
+        # t2_r = previous
         t5 = [[r[1], r[-2]] for r in t4]
-        goal = t2_r[2] + 45*60
+        goal = t2_r[2] + 45 * 60
         idx = None
-        for i,r in enumerate(t4):
+        for i, r in enumerate(t4):
             if r[0] == t3_r[0]:
                 idx = i
                 break
         t5[idx][0] = goal
-        def t5_cmp(a,b):
+
+
+        def t5_cmp(a, b):
             return a[0] - b[0]
+
+
         t5.sort(t5_cmp)
 
         matrix = []
         n = len(t4)
-        print 'n'+str(n)
+        print 'n' + str(n)
 
         m = len(t5)
-        print 'm'+str(m)
+        print 'm' + str(m)
         for i in range(n):
-            matrix.append([sys.maxint]*m)
+            matrix.append([sys.maxint] * m)
 
         for i, t4_r in enumerate(t4):
             for j, t5_r in enumerate(t5):
                 if j >= i:
                     delta = t5_r[0] - t4_r[1]
-                    if delta <= 5*60*60:
+                    if delta <= 5 * 60 * 60:
                         matrix[i][j] = delta
         for x in matrix:
             print ','.join([str(y) for y in x])
@@ -245,7 +276,9 @@ if __name__ == '__main__':
             aircraft_r = t5[aircraft_idx]
             flight_r[1] = aircraft_r[0]
             new_t4.append(flight_r)
+
         for new_t4_r in new_t4:
+            cur.execute(UPDATE_TIME_SQL, (new_t4_r[1], new_t4_r[2], new_t4_r[0]))
             s = len(t3)
             target_i = 0
             for target_i in range(len(t3)):
@@ -253,13 +286,15 @@ if __name__ == '__main__':
                 target_i += 1
                 if new_t4_r[1] < x[1]:
                     break
-            t3.insert(target_i-1, new_t4_r)
+            t3.insert(target_i - 1, new_t4_r)
 
     # Compute t4
 
     for delay in t1:
         # print '--' * 100
-        flights = query(cur, "select * from schedules where from_airport = '%s' and aircraft_type ='9' order by start_time" % (delay[3]))
+        flights = query(cur,
+                        "select * from schedules where from_airport = '%s' and aircraft_type ='9' order by start_time" % (
+                        delay[3]))
         # for flight in flights:
         #     print flight
 
@@ -268,12 +303,10 @@ if __name__ == '__main__':
         tail_number = record[6]
         start_time = record[2]
         sql = "SELECT * FROM %s WHERE aircraft_tail_number = '%s' and start_time > %s order by start_time limit 1" % (
-        SCHEDULES_TABLE, tail_number, start_time)
+            SCHEDULES_TABLE, tail_number, start_time)
         # print '-' * 100
         res = query(cur, sql)
         # print res
 
     con.commit()
     con.close()
-
-
